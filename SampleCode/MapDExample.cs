@@ -19,8 +19,8 @@ Dependencies:
 ApacheThrift 0.10.0
 
 Connection samples:
-HTTP client - get_client('http://test.mapd.com:9091', null, true)
-Binary protocol - get_client('locahost', 9091, false)
+HTTP client - get_client('http://test.mapd.com:6274', null, true)
+Binary protocol - get_client('locahost', 6274, false)
 
 */
 
@@ -36,7 +36,7 @@ namespace MapDExample
 			string user_name = "mapd";
 			string passwd = "HyperInteractive";
 			string hostname = "http://test.mapd.com";
-            int portno = 9091;
+            int portno = 6274;
             MapD.Client client;
             int session;
             string query;
@@ -52,7 +52,7 @@ namespace MapDExample
 				Console.WriteLine("Connection Completed");
 				query = "select a, b from table1 limit 10;";
 				Console.WriteLine("Query is: " + query);
-				results = client.sql_execute(session, query, true, null, -1);
+				results = client.sql_execute(session, query, true, null, -1, -1);
 
 				if (results.Row_set.Is_columnar) {
 					numRows = results.Row_set.Columns[0].Nulls.Count;

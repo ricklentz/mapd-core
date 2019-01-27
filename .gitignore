@@ -53,3 +53,4 @@ docs/generated-docs/
 # java-generated files
 java/**/target/
 java/thrift/src/
+.DS_Store

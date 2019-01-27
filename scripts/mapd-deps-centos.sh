@@ -14,33 +14,11 @@ $SUDO chown -R $USER $PREFIX
 export PATH=$PREFIX/bin:$PATH
 export LD_LIBRARY_PATH=$PREFIX/lib64:$PREFIX/lib:$LD_LIBRARY_PATH
 
+# Needed to find xmltooling and xml_security_c
+export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PKG_CONFIG_PATH
 
-download() {
-    wget --continue "$1"
-}
-
-extract() {
-    tar xvf "$1"
-}
-
-makej() {
-    make -j $(nproc)
-}
-
-download_make_install() {
-    name="$(basename $1)"
-    download "$1"
-    extract $name
-    if [ -z "$2" ]; then
-        pushd ${name%%.tar*}
-    else
-        pushd $2
-    fi
-    ./configure --prefix=$PREFIX $3
-    makej
-    make install
-    popd
-}
+SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source $SCRIPTS_DIR/common-functions.sh
 
 
 # gmp, mpc, mpfr, autoconf, automake
@@ -48,17 +26,17 @@ download_make_install() {
 # wget https://gmplib.org/repo/gmp/raw-rev/4a6d258b467f
 # patch -p1 < 4a6d258b467f
 # https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/gmp-6.1.2.tar.xz "" "--enable-fat"
+download_make_install ${HTTP_DEPS}/gmp-6.1.2.tar.xz "" "--enable-fat"
 # http://www.mpfr.org/mpfr-current/mpfr-3.1.5.tar.xz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/mpfr-3.1.5.tar.xz "" "--with-gmp=$PREFIX"
-download_make_install ftp://ftp.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz "" "--with-gmp=$PREFIX"
+download_make_install ${HTTP_DEPS}/mpfr-4.0.1.tar.xz "" "--with-gmp=$PREFIX"
+download_make_install ftp://ftp.gnu.org/gnu/mpc/mpc-1.1.0.tar.gz "" "--with-gmp=$PREFIX"
 download_make_install ftp://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.xz # "" "--build=powerpc64le-unknown-linux-gnu"
-download_make_install ftp://ftp.gnu.org/gnu/automake/automake-1.14.1.tar.xz
+download_make_install ftp://ftp.gnu.org/gnu/automake/automake-1.16.1.tar.xz
 
 # gcc
-VERS=4.9.4
-download ftp://ftp.gnu.org/gnu/gcc/gcc-$VERS/gcc-$VERS.tar.bz2
-extract gcc-$VERS.tar.bz2
+VERS=7.4.0
+download ftp://ftp.gnu.org/gnu/gcc/gcc-$VERS/gcc-$VERS.tar.xz
+extract gcc-$VERS.tar.xz
 pushd gcc-$VERS
 export CPPFLAGS="-I$PREFIX/include"
 ./configure \
@@ -86,62 +64,76 @@ export CXX=$PREFIX/bin/g++
 
 download_make_install ftp://ftp.gnu.org/gnu/libtool/libtool-2.4.6.tar.gz
 # http://zlib.net/zlib-1.2.8.tar.xz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/zlib-1.2.8.tar.xz
+download_make_install ${HTTP_DEPS}/zlib-1.2.8.tar.xz
 
-download http://bzip.org/1.0.6/bzip2-1.0.6.tar.gz
-extract bzip2-1.0.6.tar.gz
-pushd bzip2-1.0.6
+VERS=1.0.6
+# http://bzip.org/$VERS/bzip2-$VERS.tar.gz
+download ${HTTP_DEPS}/bzip2-$VERS.tar.gz
+extract bzip2-$VERS.tar.gz
+pushd bzip2-$VERS
 makej
 make install PREFIX=$PREFIX
 popd
 
-CFLAGS="-fPIC" download_make_install ftp://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.0.tar.gz # "" "--build=powerpc64le-unknown-linux-gnu"
+# https://www.openssl.org/source/openssl-1.0.2p.tar.gz
+download_make_install ${HTTP_DEPS}/openssl-1.0.2p.tar.gz "" "linux-$(uname -m) no-shared no-dso -fPIC"
 
-download_make_install ftp://ftp.gnu.org/gnu/bison/bison-2.5.1.tar.xz # "" "--build=powerpc64le-unknown-linux-gnu"
+# libarchive
+download_make_install ${HTTP_DEPS}/xz-5.2.4.tar.xz "" "--disable-shared"
+download_make_install ${HTTP_DEPS}/libarchive-3.3.2.tar.gz "" "--without-openssl --disable-shared"
+
+CFLAGS="-fPIC" download_make_install ftp://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.1.tar.gz # "" "--build=powerpc64le-unknown-linux-gnu"
+
+download_make_install ftp://ftp.gnu.org/gnu/bison/bison-3.0.4.tar.xz # "" "--build=powerpc64le-unknown-linux-gnu"
 
 # https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/flexpp-bisonpp/bisonpp-1.21-45.tar.gz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/bisonpp-1.21-45.tar.gz bison++-1.21
+download_make_install ${HTTP_DEPS}/bisonpp-1.21-45.tar.gz bison++-1.21
 
-CFLAGS="-fPIC" download_make_install ftp://ftp.gnu.org/gnu/readline/readline-6.3.tar.gz
+CFLAGS="-fPIC" download_make_install ftp://ftp.gnu.org/gnu/readline/readline-7.0.tar.gz
 
-# http://downloads.sourceforge.net/project/boost/boost/1.62.0/boost_1_62_0.tar.bz2
-download https://internal-dependencies.mapd.com/thirdparty/boost_1_62_0.tar.bz2
-extract boost_1_62_0.tar.bz2
-pushd boost_1_62_0
+VERS=1_67_0
+# http://downloads.sourceforge.net/project/boost/boost/${VERS//_/.}/boost_$VERS.tar.bz2
+download ${HTTP_DEPS}/boost_$VERS.tar.bz2
+extract boost_$VERS.tar.bz2
+pushd boost_$VERS
 ./bootstrap.sh --prefix=$PREFIX
 ./b2 cxxflags=-fPIC install --prefix=$PREFIX || true
 popd
 
-# http://www.cmake.org/files/v3.7/cmake-3.7.2.tar.gz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/cmake-3.7.2.tar.gz
+# https://cmake.org/files/v3.12/cmake-3.12.2.tar.gz
+download_make_install ${HTTP_DEPS}/cmake-3.12.2.tar.gz
+
+VERS=3.1.0
+download https://github.com/google/double-conversion/archive/v$VERS.tar.gz
+extract v$VERS.tar.gz
+mkdir -p double-conversion-$VERS/build
+pushd double-conversion-$VERS/build
+cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX ..
+makej
+make install
+popd
+
+VERS=2.2.1
+download https://github.com/gflags/gflags/archive/v$VERS.tar.gz
+extract v$VERS.tar.gz
+mkdir -p gflags-$VERS/build
+pushd gflags-$VERS/build
+cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX ..
+makej
+make install
+popd
+
+VERS=0.3.5
+CXXFLAGS="-fPIC" download_make_install https://github.com/google/glog/archive/v$VERS.tar.gz glog-$VERS "--enable-shared=no" # --build=powerpc64le-unknown-linux-gnu"
 
 # folly
-download https://github.com/google/double-conversion/archive/4abe3267170fa52f39460460456990dbae803f4d.tar.gz
-extract 4abe3267170fa52f39460460456990dbae803f4d.tar.gz
-mv double-conversion-4abe3267170fa52f39460460456990dbae803f4d google-double-conversion-4abe326
-mkdir -p google-double-conversion-4abe326/build
-pushd google-double-conversion-4abe326/build
-cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX ..
-makej
-make install
-popd
+VERS=2.1.8
+download_make_install https://github.com/libevent/libevent/releases/download/release-$VERS-stable/libevent-$VERS-stable.tar.gz
 
-download https://github.com/gflags/gflags/archive/v2.2.0.tar.gz
-extract v2.2.0.tar.gz
-mkdir -p gflags-2.2.0/build
-pushd gflags-2.2.0/build
-cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX ..
-makej
-make install
-popd
-
-CXXFLAGS="-fPIC" download_make_install https://github.com/google/glog/archive/v0.3.4.tar.gz glog-0.3.4 "--enable-shared=no" # --build=powerpc64le-unknown-linux-gnu"
-
-download_make_install https://github.com/libevent/libevent/releases/download/release-2.0.22-stable/libevent-2.0.22-stable.tar.gz
-
-download https://github.com/facebook/folly/archive/v2017.04.10.00.tar.gz
-extract v2017.04.10.00.tar.gz
-pushd folly-2017.04.10.00/folly
+VERS=2018.05.07.00
+download https://github.com/facebook/folly/archive/v$VERS.tar.gz
+extract v$VERS.tar.gz
+pushd folly-$VERS/folly
 OLDPATH=$PATH
 PATH=/usr/bin
 /usr/bin/autoreconf -ivf
@@ -152,15 +144,18 @@ make install
 popd
 
 # llvm
-download_make_install http://thrysoee.dk/editline/libedit-20160903-3.1.tar.gz
-VERS=4.0.0
-download http://releases.llvm.org/$VERS/llvm-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/cfe-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/compiler-rt-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/lldb-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/lld-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/libcxx-$VERS.src.tar.xz
-download http://releases.llvm.org/$VERS/libcxxabi-$VERS.src.tar.xz
+# http://thrysoee.dk/editline/libedit-20170329-3.1.tar.gz
+download_make_install ${HTTP_DEPS}/libedit-20170329-3.1.tar.gz
+VERS=7.0.1
+# http://releases.llvm.org
+download ${HTTP_DEPS}/llvm/$VERS/llvm-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/cfe-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/compiler-rt-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/lldb-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/lld-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/libcxx-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/libcxxabi-$VERS.src.tar.xz
+download ${HTTP_DEPS}/llvm/$VERS/clang-tools-extra-$VERS.src.tar.xz
 rm -rf llvm-$VERS.src
 extract llvm-$VERS.src.tar.xz
 extract cfe-$VERS.src.tar.xz
@@ -169,12 +164,18 @@ extract lld-$VERS.src.tar.xz
 extract lldb-$VERS.src.tar.xz
 extract libcxx-$VERS.src.tar.xz
 extract libcxxabi-$VERS.src.tar.xz
+extract clang-tools-extra-$VERS.src.tar.xz
 mv cfe-$VERS.src llvm-$VERS.src/tools/clang
 mv compiler-rt-$VERS.src llvm-$VERS.src/projects/compiler-rt
 mv lld-$VERS.src llvm-$VERS.src/tools/lld
 mv lldb-$VERS.src llvm-$VERS.src/tools/lldb
 mv libcxx-$VERS.src llvm-$VERS.src/projects/libcxx
 mv libcxxabi-$VERS.src llvm-$VERS.src/projects/libcxxabi
+mkdir -p llvm-$VERS.src/tools/clang/tools
+mv clang-tools-extra-$VERS.src llvm-$VERS.src/tools/clang/tools/extra
+pushd llvm-$VERS.src
+patch -p0 < ${SCRIPTS_DIR}/llvm-D50710.patch
+popd
 rm -rf build.llvm-$VERS
 mkdir build.llvm-$VERS
 pushd build.llvm-$VERS
@@ -186,53 +187,58 @@ fi
 make install
 popd
 
-# openssl (probably not a good idea)
-#download https://www.openssl.org/source/openssl-1.0.2c.tar.gz
-#x openssl-1.0.2c.tar.gz
-#pushd openssl-1.0.2c
-#./Configure shared --prefix=$PREFIX linux-x86_64
-#makej
-#make install
-#popd
-
-# https://curl.haxx.se/download/curl-7.50.0.tar.bz2
-download_make_install https://internal-dependencies.mapd.com/thirdparty/curl-7.50.0.tar.bz2 "" "--disable-ldap --disable-ldaps"
-
-# http://www.cryptopp.com/cryptopp563.zip
-download https://internal-dependencies.mapd.com/thirdparty/cryptopp563.zip
-unzip -a -d cryptopp563 cryptopp563
-pushd cryptopp563
-PREFIX=$PREFIX make all shared
-PREFIX=$PREFIX make install
-popd
+VERS=7.60.0
+# https://curl.haxx.se/download/curl-$VERS.tar.xz
+download_make_install ${HTTP_DEPS}/curl-$VERS.tar.xz "" "--disable-ldap --disable-ldaps"
 
 # thrift
-VERS=0.10.0
-download http://apache.claz.org/thrift/$VERS/thrift-$VERS.tar.gz
+VERS=0.11.0
+# http://apache.claz.org/thrift/$VERS/thrift-$VERS.tar.gz
+download ${HTTP_DEPS}/thrift-$VERS.tar.gz
 extract thrift-$VERS.tar.gz
 pushd thrift-$VERS
-CFLAGS="-fPIC" CXXFLAGS="-fPIC" JAVA_PREFIX=$PREFIX/lib ./configure --prefix=$PREFIX --with-lua=no --with-python=no --with-php=no --with-boost-libdir=$PREFIX/lib
+CFLAGS="-fPIC" CXXFLAGS="-fPIC" JAVA_PREFIX=$PREFIX/lib ./configure \
+    --prefix=$PREFIX \
+    --with-lua=no \
+    --with-python=no \
+    --with-php=no \
+    --with-ruby=no \
+    --with-qt4=no \
+    --with-qt5=no \
+    --with-boost-libdir=$PREFIX/lib
 makej
 make install
 popd
 
 # backend rendering
-# https://downloads.sourceforge.net/project/glew/glew/1.13.0/glew-1.13.0.tgz
-download https://internal-dependencies.mapd.com/thirdparty/glew-1.13.0.tgz
-extract glew-1.13.0.tgz
-pushd glew-1.13.0
-patch -p1 < ../mapd-deps-glew-egl.patch
-make extensions
-make DESTDIR=$PREFIX GLEW_DEST=""
-make DESTDIR=$PREFIX GLEW_DEST="" install
-make DESTDIR=$PREFIX GLEW_DEST="" install.mx
+VERS=1.6.21
+# http://download.sourceforge.net/libpng/libpng-$VERS.tar.xz
+download_make_install ${HTTP_DEPS}/libpng-$VERS.tar.xz
+
+VERS=3.0.2
+download https://github.com/cginternals/glbinding/archive/v$VERS.tar.gz
+extract v$VERS.tar.gz
+BDIR="glbinding-$VERS/build"
+mkdir -p $BDIR
+pushd $BDIR
+cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DOPTION_BUILD_DOCS=OFF \
+    -DOPTION_BUILD_EXAMPLES=OFF \
+    -DOPTION_BUILD_TESTS=OFF \
+    -DOPTION_BUILD_TOOLS=OFF \
+    -DOPTION_BUILD_WITH_BOOST_THREAD=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    ..
+makej
+make install
 popd
 
-# http://download.sourceforge.net/libpng/libpng-1.6.21.tar.xz
-download_make_install https://internal-dependencies.mapd.com/thirdparty/libpng-1.6.21.tar.xz
+install_snappy
 
 # c-blosc
-VERS=1.11.3
+VERS=1.14.4
 download https://github.com/Blosc/c-blosc/archive/v$VERS.tar.gz
 extract v$VERS.tar.gz
 BDIR="c-blosc-$VERS/build"
@@ -244,45 +250,84 @@ makej
 make install
 popd
 
-# geo
-# https://downloads.sourceforge.net/project/expat/expat/2.2.0/expat-2.2.0.tar.bz2
-download_make_install https://internal-dependencies.mapd.com/thirdparty/expat-2.2.0.tar.bz2
-
-# https://github.com/google/libkml/archive/master.zip
-download https://internal-dependencies.mapd.com/thirdparty/libkml-master.zip
+# GEO STUFF
+# expat
+download_make_install https://github.com/libexpat/libexpat/releases/download/R_2_2_5/expat-2.2.5.tar.bz2
+# kml
+download ${HTTP_DEPS}/libkml-master.zip
 unzip -u libkml-master.zip
 pushd libkml-master
 ./autogen.sh || true
-./configure --with-expat-include-dir=$PREFIX/include/ --with-expat-lib-dir=$PREFIX/lib --prefix=$PREFIX --enable-static --disable-java --disable-python --disable-swig
+CXXFLAGS="-std=c++03" ./configure --with-expat-include-dir=$PREFIX/include/ --with-expat-lib-dir=$PREFIX/lib --prefix=$PREFIX --enable-static --disable-java --disable-python --disable-swig
 makej
 make install
 popd
+# proj
+download_make_install ${HTTP_DEPS}/proj-5.2.0.tar.gz
+# gdal
+download_make_install ${HTTP_DEPS}/gdal-2.3.2.tar.xz "" "--without-geos --with-libkml=$PREFIX --with-proj=$PREFIX"
 
-download_make_install http://download.osgeo.org/proj/proj-4.9.3.tar.gz
-download_make_install http://download.osgeo.org/gdal/2.0.3/gdal-2.0.3.tar.xz "" "--without-curl --without-geos --with-libkml=$PREFIX --with-static-proj4=$PREFIX"
+# Apache Arrow (see common-functions.sh)
+install_arrow
 
-# arrow
-VERS=0.4.1
-download https://github.com/apache/arrow/archive/apache-arrow-$VERS.tar.gz
-extract apache-arrow-$VERS.tar.gz
-mkdir -p arrow-apache-arrow-$VERS/cpp/build
-pushd arrow-apache-arrow-$VERS/cpp/build
-cmake \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DARROW_BUILD_SHARED=off \
-    -DARROW_BUILD_STATIC=on \
-    -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DARROW_BOOST_USE_SHARED=off \
-    -DARROW_JEMALLOC_USE_SHARED=off \
-    ..
-makej
-make install
-popd
-
-# https://storage.googleapis.com/golang/go1.8.1.linux-amd64.tar.gz
-download https://internal-dependencies.mapd.com/thirdparty/go1.8.1.linux-amd64.tar.gz
-extract go1.8.1.linux-amd64.tar.gz
+VERS=1.11
+ARCH=$(uname -m)
+ARCH=${ARCH//x86_64/amd64}
+ARCH=${ARCH//aarch64/arm64}
+# https://dl.google.com/go/go$VERS.linux-$ARCH.tar.gz
+download ${HTTP_DEPS}/go$VERS.linux-$ARCH.tar.gz
+extract go$VERS.linux-$ARCH.tar.gz
 mv go $PREFIX
+
+# install AWS core and s3 sdk
+install_awscpp -j $(nproc)
+
+# glslang (with spirv-tools)
+VERS=7.9.2888 # 8/13/18
+rm -rf glslang
+mkdir -p glslang
+pushd glslang
+wget --continue https://github.com/KhronosGroup/glslang/archive/$VERS.tar.gz
+tar xvf $VERS.tar.gz
+pushd glslang-$VERS
+./update_glslang_sources.py
+mkdir build
+pushd build
+cmake \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    ..
+make -j $(nproc)
+make install
+popd # build
+popd # glslang-$VERS
+popd # glslang
+
+# Vulkan
+VERS=1.1.82.1 # 8/20/18
+rm -rf vulkan
+mkdir -p vulkan
+pushd vulkan
+wget --continue https://vulkan.lunarg.com/sdk/download/$VERS/linux/vulkansdk-linux-x86_64-$VERS.tar.gz?Human=true -O vulkansdk-linux-x86_64-$VERS.tar.gz
+tar xvf vulkansdk-linux-x86_64-$VERS.tar.gz
+rsync -av $VERS/x86_64/* $PREFIX
+popd # vulkan
+
+# install opensaml and its dependencies
+VERS=3_2_1
+download ${HTTP_DEPS}/Xerces-C_$VERS.tar.gz
+extract Xerces-C_$VERS.tar.gz
+XERCESCROOT=$PWD/xerces-c-Xerces-C_$VERS
+mkdir $XERCESCROOT/build
+pushd $XERCESCROOT/build
+cmake -DCMAKE_INSTALL_PREFIX=$PREFIX -DBUILD_SHARED_LIBS=off -Dnetwork=off -DCMAKE_BUILD_TYPE=release ..
+makej
+make install
+popd
+
+download_make_install ${HTTP_DEPS}/xml-security-c-2.0.0.tar.gz "" "--without-xalan --enable-static --disable-shared"
+download_make_install ${HTTP_DEPS}/xmltooling-3.0.2-nolog4shib.tar.gz "" "--enable-static --disable-shared"
+download_make_install ${HTTP_DEPS}/opensaml-3.0.0-nolog4shib.tar.gz "" "--enable-static --disable-shared"
 
 sed -e "s|%MAPD_DEPS_ROOT%|$PREFIX|g" mapd-deps.modulefile.in > mapd-deps-$SUFFIX.modulefile
 sed -e "s|%MAPD_DEPS_ROOT%|$PREFIX|g" mapd-deps.sh.in > mapd-deps-$SUFFIX.sh
@@ -292,3 +337,4 @@ cp mapd-deps-$SUFFIX.sh mapd-deps-$SUFFIX.modulefile $PREFIX
 if [ "$1" = "--compress" ] ; then
     tar acvf mapd-deps-$SUFFIX.tar.xz -C $(dirname $PREFIX) $SUFFIX
 fi
+

@@ -21,34 +21,40 @@ import com.mapd.calcite.parser.MapDParser;
 import org.apache.commons.pool.PoolableObjectFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.mapd.common.SockTransportProperties;
 
 /**
  *
  * @author michael
  */
 class CalciteParserFactory implements PoolableObjectFactory {
-
   final static Logger MAPDLOGGER = LoggerFactory.getLogger(CalciteParserFactory.class);
 
   private final String dataDir;
   private final Map<String, ExtensionFunction> extSigs;
   private final int mapdPort;
+  private final SockTransportProperties socket_transport_properties;
 
-  public CalciteParserFactory(String dataDir, final Map<String, ExtensionFunction> extSigs, int mapdPort) {
+  public CalciteParserFactory(String dataDir,
+          final Map<String, ExtensionFunction> extSigs,
+          int mapdPort,
+          SockTransportProperties skT) {
     this.dataDir = dataDir;
     this.extSigs = extSigs;
     this.mapdPort = mapdPort;
+    this.socket_transport_properties = skT;
   }
 
   @Override
   public Object makeObject() throws Exception {
-    MapDParser obj = new MapDParser(dataDir, extSigs, mapdPort);
+    MapDParser obj =
+            new MapDParser(dataDir, extSigs, mapdPort, socket_transport_properties);
     return obj;
   }
 
   @Override
   public void destroyObject(Object obj) throws Exception {
-    //no need to do anything
+    // no need to do anything
   }
 
   @Override
@@ -71,5 +77,4 @@ class CalciteParserFactory implements PoolableObjectFactory {
   public void passivateObject(Object obj) throws Exception {
     // nothing to currently do here
   }
-
 }

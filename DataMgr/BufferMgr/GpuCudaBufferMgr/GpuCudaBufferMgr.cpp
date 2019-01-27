@@ -15,9 +15,9 @@
  */
 
 #include "GpuCudaBufferMgr.h"
-#include "GpuCudaBuffer.h"
-#include "../../../CudaMgr/CudaMgr.h"
 #include <glog/logging.h>
+#include "../../../CudaMgr/CudaMgr.h"
+#include "GpuCudaBuffer.h"
 //#include "../CudaUtils.h"
 
 namespace Buffer_Namespace {
@@ -28,10 +28,23 @@ GpuCudaBufferMgr::GpuCudaBufferMgr(const int deviceId,
                                    const size_t bufferAllocIncrement,
                                    const size_t pageSize,
                                    AbstractBufferMgr* parentMgr)
-    : BufferMgr(deviceId, maxBufferSize, bufferAllocIncrement, pageSize, parentMgr), cudaMgr_(cudaMgr) {}
+    : BufferMgr(deviceId, maxBufferSize, bufferAllocIncrement, pageSize, parentMgr)
+    , cudaMgr_(cudaMgr) {}
 
 GpuCudaBufferMgr::~GpuCudaBufferMgr() {
-  freeAllMem();
+  try {
+    cudaMgr_->synchronizeDevices();
+    freeAllMem();
+#ifdef HAVE_CUDA
+  } catch (const CudaMgr_Namespace::CudaErrorException& e) {
+    if (e.getStatus() == CUDA_ERROR_DEINITIALIZED) {
+      // TODO(adb / asuhan): Verify cuModuleUnload removes the context
+      return;
+    }
+#endif
+  } catch (const std::runtime_error& e) {
+    LOG(ERROR) << "CUDA Error: " << e.what();
+  }
 }
 
 void GpuCudaBufferMgr::addSlab(const size_t slabSize) {
@@ -52,11 +65,18 @@ void GpuCudaBufferMgr::freeAllMem() {
   }
 }
 
-void GpuCudaBufferMgr::allocateBuffer(BufferList::iterator segIt, const size_t pageSize, const size_t initialSize) {
-  new GpuCudaBuffer(this, segIt, deviceId_, cudaMgr_, pageSize, initialSize);  // this line is admittedly a bit weird
-                                                                               // but the segment iterator passed into
-                                                                               // buffer takes the address of the new
-                                                                               // Buffer in its buffer member
+void GpuCudaBufferMgr::allocateBuffer(BufferList::iterator segIt,
+                                      const size_t pageSize,
+                                      const size_t initialSize) {
+  new GpuCudaBuffer(this,
+                    segIt,
+                    deviceId_,
+                    cudaMgr_,
+                    pageSize,
+                    initialSize);  // this line is admittedly a bit weird
+                                   // but the segment iterator passed into
+                                   // buffer takes the address of the new
+                                   // Buffer in its buffer member
 }
 
-}  // Buffer_Namespace
+}  // namespace Buffer_Namespace

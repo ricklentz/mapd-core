@@ -1,6 +1,8 @@
 %option c++
 %option noyywrap case-insensitive yylineno
 
+%Start STATE_CREATE STATE_CREATE_AS
+
 %{
 #undef yyFlexLexer
 #include <cstdint>
@@ -22,10 +24,14 @@ using namespace std;
 
 	/* literal keyword tokens */
 
+ACCESS        TOK(ACCESS)
 ALL		{ yylval.qualval = kALL; TOK(ALL) }
 ALTER         TOK(ALTER)
+ADD           TOK(ADD)
 AND           TOK(AND)
 ANY           { yylval.qualval = kANY; TOK(ANY) }
+ARRAY         TOK(ARRAY)
+<STATE_CREATE>AS    { BEGIN STATE_CREATE_AS; return SQLParser::AS; }
 AS            TOK(AS)
 ASC           TOK(ASC)
 AUTHORIZATION	TOK(AUTHORIZATION)
@@ -43,9 +49,10 @@ COLUMN        TOK(COLUMN)
 COMMIT        TOK(COMMIT)
 CONTINUE      TOK(CONTINUE)
 COPY          TOK(COPY);
-CREATE        TOK(CREATE)
+CREATE        { BEGIN STATE_CREATE; return SQLParser::CREATE; }
 CURRENT       TOK(CURRENT)
 CURSOR        TOK(CURSOR)
+DASHBOARD     TOK(DASHBOARD)
 DATABASE      TOK(DATABASE)
 DATE          TOK(DATE)
 DATETIME      TOK(DATETIME)
@@ -59,6 +66,8 @@ DICTIONARY    TOK(DICTIONARY)
 DISTINCT      TOK(DISTINCT)
 DOUBLE        TOK(DOUBLE)
 DROP          TOK(DROP)
+EDIT          TOK(EDIT)
+EDITOR        TOK(EDITOR)
 ELSE          TOK(ELSE)
 END           TOK(END)
 EXISTS        TOK(EXISTS)
@@ -71,6 +80,8 @@ FOR           TOK(FOR)
 FOREIGN       TOK(FOREIGN)
 FOUND         TOK(FOUND)
 FROM          TOK(FROM)
+GEOGRAPHY     TOK(GEOGRAPHY)
+GEOMETRY      TOK(GEOMETRY)
 GRANT         TOK(GRANT)
 GROUP         TOK(GROUP)
 HAVING        TOK(HAVING)
@@ -86,7 +97,9 @@ LAST          TOK(LAST)
 LENGTH        TOK(LENGTH)
 LIKE          TOK(LIKE)
 LIMIT         TOK(LIMIT)
+LINESTRING    TOK(LINESTRING)
 MOD           TOK(MOD)
+MULTIPOLYGON  TOK(MULTIPOLYGON)
 NOT           TOK(NOT)
 NOW           TOK(NOW)
 NULL          TOK(NULLX)
@@ -96,8 +109,11 @@ OFFSET        TOK(OFFSET)
 ON            TOK(ON)
 OPEN          TOK(OPEN)
 OPTION        TOK(OPTION)
+OPTIMIZE      TOK(OPTIMIZE)
 OR            TOK(OR)
 ORDER         TOK(ORDER)
+POINT         TOK(POINT)
+POLYGON       TOK(POLYGON)
 PRECISION     TOK(PRECISION)
 PRIMARY       TOK(PRIMARY)
 PRIVILEGES		TOK(PRIVILEGES)
@@ -106,6 +122,8 @@ PUBLIC        TOK(PUBLIC)
 REAL          TOK(REAL)
 REFERENCES		TOK(REFERENCES)
 RENAME        TOK(RENAME)
+REVOKE        TOK(REVOKE)
+ROLE          TOK(ROLE)
 ROLLBACK      TOK(ROLLBACK)
 SCHEMA        TOK(SCHEMA)
 SELECT        TOK(SELECT)
@@ -115,12 +133,16 @@ SHARED        TOK(SHARED)
 SHOW          TOK(SHOW)
 SMALLINT      TOK(SMALLINT)
 SOME          { yylval.qualval = kANY; TOK(SOME) } /* SOME = ANY */
+SQL           TOK(SQL)
 TABLE         TOK(TABLE)
+TEMPORARY     TOK(TEMPORARY)
 TEXT          TOK(TEXT)
 THEN          TOK(THEN)
 TIME          TOK(TIME)
 TIMESTAMP     TOK(TIMESTAMP)
+TINYINT       TOK(TINYINT)
 TO            TOK(TO)
+TRUNCATE      TOK(TRUNCATE)
 UNION         TOK(UNION)
 UNIQUE        TOK(UNIQUE)
 UPDATE        TOK(UPDATE)
@@ -142,11 +164,18 @@ WORK          TOK(WORK)
 "<=" { yylval.opval = kLE; TOK(COMPARISON); }
 ">=" { yylval.opval = kGE; TOK(COMPARISON); }
 
-[-+*/(),.;]	{ return yytext[0]; }
+[-+*/(),.]	{ return yytext[0]; }
 
+[;] { BEGIN 0; return yytext[0]; }
 
 	/* names */
 [A-Za-z_][A-Za-z0-9\$_]*	{ yylval.stringval = new std::string(yytext); TOK(NAME) }
+
+  /* names with dashes */
+[A-Za-z_][A-Za-z0-9\$_\-]*	{ yylval.stringval = new std::string(yytext); TOK(DASHEDNAME) }
+
+	/* emails */
+([^[:space:]\"]+|\".+\")@[A-Za-z0-9][A-Za-z0-9\-\.]*\.[A-Za-z]+	{ yylval.stringval = new std::string(yytext); TOK(EMAIL) }
 
 	/* parameters */
 ":"[A-Za-z][A-Za-z0-9_]*	TOK(PARAMETER)
@@ -171,6 +200,30 @@ WORK          TOK(WORK)
 -?"."[0-9]*[eE][+-]?[0-9]+	{ yylval.doubleval = atof(yytext); TOK(DOUBLE) }
 
 	/* strings */
+<STATE_CREATE_AS>.+/([Ww][Ii][Tt][Hh]) {
+    int len = yyleng;
+    yylval.stringval = new std::string(yytext, len);
+    boost::trim(*yylval.stringval);
+    
+    BEGIN 0;
+    return SQLParser::SELECTSTRING;
+  }
+  
+<STATE_CREATE_AS>.+/[;] {
+    int len = yyleng;
+    const std::string keyword = "with";
+    std::string tmp(yytext, len);
+    if (boost::algorithm::ifind_first(tmp, keyword)) {
+      REJECT;
+    } else {
+      yylval.stringval = new std::string(yytext, len);
+      boost::trim(*yylval.stringval);
+      BEGIN 0;
+      return SQLParser::SELECTSTRING;
+    }
+  }
+
+
 #~#.*#~# {
 		int len = yyleng - 6;
 		if (len > 0) {
@@ -236,7 +289,7 @@ WORK          TOK(WORK)
 \n		{ lineno++; }
 	*/
 
-[ \t\r]+	;	/* white space */
+[ \n\t\r]+	;	/* white space */
 
 "--".*	;	/* comment */
 

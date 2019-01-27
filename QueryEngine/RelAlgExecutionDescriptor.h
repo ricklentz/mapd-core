@@ -18,109 +18,99 @@
 #define QUERYENGINE_RELALGEXECUTIONDESCRIPTOR_H
 
 #include "GroupByAndAggregate.h"
+#include "JoinFilterPushDown.h"
 #include "RelAlgAbstractInterpreter.h"
 
-class ResultRows;
+class ResultSet;
 
 class ExecutionResult {
  public:
-  ExecutionResult(const ResultRows& rows, const std::vector<TargetMetaInfo>& targets_meta)
-      : result_(boost::make_unique<ResultRows>(rows)), targets_meta_(targets_meta) {}
+  ExecutionResult(const std::shared_ptr<ResultSet>& rows,
+                  const std::vector<TargetMetaInfo>& targets_meta)
+      : result_(rows), targets_meta_(targets_meta), filter_push_down_enabled_(false) {}
 
-  ExecutionResult(const IteratorTable& table, const std::vector<TargetMetaInfo>& targets_meta)
-      : result_(boost::make_unique<IteratorTable>(table)), targets_meta_(targets_meta) {}
-
-  ExecutionResult(ResultPtr&& result, const std::vector<TargetMetaInfo>& targets_meta) : targets_meta_(targets_meta) {
-    if (auto rows = boost::get<RowSetPtr>(&result)) {
-      result_ = std::move(*rows);
-      CHECK(boost::get<RowSetPtr>(result_));
-    } else if (auto tab = boost::get<IterTabPtr>(&result)) {
-      result_ = std::move(*tab);
-      CHECK(boost::get<IterTabPtr>(result_));
-    } else {
-      CHECK(false);
-    }
+  ExecutionResult(ResultSetPtr&& result, const std::vector<TargetMetaInfo>& targets_meta)
+      : targets_meta_(targets_meta), filter_push_down_enabled_(false) {
+    result_ = std::move(result);
   }
 
-  ExecutionResult(const ExecutionResult& that) : targets_meta_(that.targets_meta_) {
-    if (const auto rows = boost::get<RowSetPtr>(&that.result_)) {
-      CHECK(*rows);
-      result_ = boost::make_unique<ResultRows>(**rows);
-      CHECK(boost::get<RowSetPtr>(result_));
-    } else if (const auto tab = boost::get<IterTabPtr>(&that.result_)) {
-      CHECK(*tab);
-      result_ = boost::make_unique<IteratorTable>(**tab);
-      CHECK(boost::get<IterTabPtr>(result_));
-    } else {
-      CHECK(false);
+  ExecutionResult(const ExecutionResult& that)
+      : targets_meta_(that.targets_meta_)
+      , pushed_down_filter_info_(that.pushed_down_filter_info_)
+      , filter_push_down_enabled_(that.filter_push_down_enabled_) {
+    if (!pushed_down_filter_info_.empty() ||
+        (filter_push_down_enabled_ && pushed_down_filter_info_.empty())) {
+      return;
     }
+    result_ = that.result_;
   }
 
-  ExecutionResult(ExecutionResult&& that) : targets_meta_(std::move(that.targets_meta_)) {
-    if (auto rows = boost::get<RowSetPtr>(&that.result_)) {
-      result_ = std::move(*rows);
-      CHECK(boost::get<RowSetPtr>(result_));
-    } else if (auto tab = boost::get<IterTabPtr>(&that.result_)) {
-      result_ = std::move(*tab);
-      CHECK(boost::get<IterTabPtr>(result_));
-    } else {
-      CHECK(false);
+  ExecutionResult(ExecutionResult&& that)
+      : targets_meta_(std::move(that.targets_meta_))
+      , pushed_down_filter_info_(std::move(that.pushed_down_filter_info_))
+      , filter_push_down_enabled_(std::move(that.filter_push_down_enabled_)) {
+    if (!pushed_down_filter_info_.empty() ||
+        (filter_push_down_enabled_ && pushed_down_filter_info_.empty())) {
+      return;
     }
+    result_ = std::move(that.result_);
   }
+
+  ExecutionResult(const std::vector<PushedDownFilterInfo>& pushed_down_filter_info,
+                  bool filter_push_down_enabled)
+      : pushed_down_filter_info_(pushed_down_filter_info)
+      , filter_push_down_enabled_(filter_push_down_enabled) {}
 
   ExecutionResult& operator=(const ExecutionResult& that) {
-    if (const auto rows = boost::get<RowSetPtr>(&that.result_)) {
-      CHECK(*rows);
-      result_ = boost::make_unique<ResultRows>(**rows);
-      CHECK(boost::get<RowSetPtr>(result_));
-    } else if (const auto tab = boost::get<IterTabPtr>(&that.result_)) {
-      CHECK(*tab);
-      result_ = boost::make_unique<IteratorTable>(**tab);
-      CHECK(boost::get<IterTabPtr>(result_));
-    } else {
-      CHECK(false);
+    if (!that.pushed_down_filter_info_.empty() ||
+        (that.filter_push_down_enabled_ && that.pushed_down_filter_info_.empty())) {
+      pushed_down_filter_info_ = that.pushed_down_filter_info_;
+      filter_push_down_enabled_ = that.filter_push_down_enabled_;
+      return *this;
     }
+    result_ = that.result_;
     targets_meta_ = that.targets_meta_;
     return *this;
   }
 
-  const ResultRows& getRows() const {
-    auto& rows = boost::get<RowSetPtr>(result_);
-    CHECK(rows);
-    return *rows;
-  }
+  const std::shared_ptr<ResultSet>& getRows() const { return result_; }
 
-  bool empty() const {
-    if (auto rows = boost::get<RowSetPtr>(&result_)) {
-      return !*rows;
-    } else if (auto tab = boost::get<IterTabPtr>(&result_)) {
-      return !*tab;
-    } else {
-      CHECK(false);
-    }
-    return true;
-  }
+  bool empty() const { return !result_; }
 
-  const ResultPtr& getDataPtr() const { return result_; }
+  const ResultSetPtr& getDataPtr() const { return result_; }
 
   const std::vector<TargetMetaInfo>& getTargetsMeta() const { return targets_meta_; }
 
+  const std::vector<PushedDownFilterInfo>& getPushedDownFilterInfo() const {
+    return pushed_down_filter_info_;
+  }
+
+  const bool isFilterPushDownEnabled() const { return filter_push_down_enabled_; }
+
   void setQueueTime(const int64_t queue_time_ms) {
-    if (auto rows = boost::get<RowSetPtr>(&result_)) {
-      CHECK(*rows);
-      (*rows)->setQueueTime(queue_time_ms);
-    }
+    CHECK(result_);
+    result_->setQueueTime(queue_time_ms);
   }
 
  private:
-  ResultPtr result_;
+  ResultSetPtr result_;
   std::vector<TargetMetaInfo> targets_meta_;
+  // filters chosen to be pushed down
+  std::vector<PushedDownFilterInfo> pushed_down_filter_info_;
+  // whether or not it was allowed to look for filters to push down
+  bool filter_push_down_enabled_;
 };
 
 class RaExecutionDesc {
  public:
   RaExecutionDesc(const RelAlgNode* body)
-      : body_(body), result_({{}, {}, nullptr, nullptr, {}, ExecutorDeviceType::CPU}, {}) {}
+      : body_(body)
+      , result_(std::make_shared<ResultSet>(std::vector<TargetInfo>{},
+                                            ExecutorDeviceType::CPU,
+                                            QueryMemoryDescriptor(),
+                                            nullptr,
+                                            nullptr),
+                {}) {}
 
   const ExecutionResult& getResult() const { return result_; }
 
@@ -137,6 +127,7 @@ class RaExecutionDesc {
 };
 
 std::vector<RaExecutionDesc> get_execution_descriptors(const RelAlgNode*);
-std::vector<RaExecutionDesc> get_execution_descriptors(const std::vector<const RelAlgNode*>&);
+std::vector<RaExecutionDesc> get_execution_descriptors(
+    const std::vector<const RelAlgNode*>&);
 
 #endif  // QUERYENGINE_RELALGEXECUTIONDESCRIPTOR_H

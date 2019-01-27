@@ -22,21 +22,21 @@
  * Copyright (c) 2014 MapD Technologies, Inc.  All rights reserved.
  **/
 
-#include <iostream>
-#include <string>
-#include <cstring>
-#include <cstdlib>
-#include <cstdint>
+#include <boost/functional/hash.hpp>
 #include <cfloat>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <exception>
+#include <iostream>
 #include <memory>
 #include <random>
-#include <boost/functional/hash.hpp>
+#include <string>
 #include "../Catalog/Catalog.h"
 #include "../DataMgr/DataMgr.h"
-#include "../Shared/sqltypes.h"
 #include "../Fragmenter/Fragmenter.h"
 #include "../Shared/measure.h"
+#include "../Shared/sqltypes.h"
 
 using namespace std;
 using namespace Catalog_Namespace;
@@ -66,9 +66,9 @@ size_t random_fill_int32(int8_t* buf, size_t num_elems) {
   return hash;
 }
 
-size_t random_fill_int64(int8_t* buf, size_t num_elems) {
+size_t random_fill_int64(int8_t* buf, size_t num_elems, int64_t min, int64_t max) {
   default_random_engine gen;
-  uniform_int_distribution<int64_t> dist(INT64_MIN, INT64_MAX);
+  uniform_int_distribution<int64_t> dist(min, max);
   int64_t* p = (int64_t*)buf;
   size_t hash = 0;
   for (size_t i = 0; i < num_elems; i++) {
@@ -76,6 +76,10 @@ size_t random_fill_int64(int8_t* buf, size_t num_elems) {
     boost::hash_combine(hash, p[i]);
   }
   return hash;
+}
+
+size_t random_fill_int64(int8_t* buf, size_t num_elems) {
+  return random_fill_int64(buf, num_elems, INT64_MIN, INT64_MAX);
 }
 
 size_t random_fill_float(int8_t* buf, size_t num_elems) {
@@ -102,7 +106,10 @@ size_t random_fill_double(int8_t* buf, size_t num_elems) {
   return hash;
 }
 
-size_t random_fill_string(vector<string>& stringVec, size_t num_elems, int max_len, size_t& data_volumn) {
+size_t random_fill_string(vector<string>& stringVec,
+                          size_t num_elems,
+                          int max_len,
+                          size_t& data_volumn) {
   string chars("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890");
   default_random_engine gen;
   uniform_int_distribution<> char_dist(0, chars.size() - 1);
@@ -112,8 +119,11 @@ size_t random_fill_string(vector<string>& stringVec, size_t num_elems, int max_l
   for (size_t n = 0; n < num_elems; n++) {
     int len = len_dist(gen);
     string s(len, ' ');
-    for (int i = 0; i < len; i++)
-      s[i] = chars[char_dist(gen)];
+    for (int i = 0; i < len; i++) {
+      {
+        s[i] = chars[char_dist(gen)];
+      }
+    }
     // cout << "insert string: " << s << endl;
     stringVec[n] = s;
     boost::hash_combine(hash, string_hash(s));
@@ -122,7 +132,10 @@ size_t random_fill_string(vector<string>& stringVec, size_t num_elems, int max_l
   return hash;
 }
 
-size_t random_fill_int8array(vector<vector<int8_t>>& stringVec, size_t num_elems, int max_len, size_t& data_volumn) {
+size_t random_fill_int8array(vector<vector<int8_t>>& stringVec,
+                             size_t num_elems,
+                             int max_len,
+                             size_t& data_volumn) {
   default_random_engine gen;
   uniform_int_distribution<int8_t> dist(INT8_MIN, INT8_MAX);
   uniform_int_distribution<> len_dist(0, max_len);
@@ -140,7 +153,10 @@ size_t random_fill_int8array(vector<vector<int8_t>>& stringVec, size_t num_elems
   return hash;
 }
 
-size_t random_fill_int16array(vector<vector<int16_t>>& stringVec, size_t num_elems, int max_len, size_t& data_volumn) {
+size_t random_fill_int16array(vector<vector<int16_t>>& stringVec,
+                              size_t num_elems,
+                              int max_len,
+                              size_t& data_volumn) {
   default_random_engine gen;
   uniform_int_distribution<int16_t> dist(INT16_MIN, INT16_MAX);
   uniform_int_distribution<> len_dist(0, max_len / 2);
@@ -158,7 +174,10 @@ size_t random_fill_int16array(vector<vector<int16_t>>& stringVec, size_t num_ele
   return hash;
 }
 
-size_t random_fill_int32array(vector<vector<int32_t>>& stringVec, size_t num_elems, int max_len, size_t& data_volumn) {
+size_t random_fill_int32array(vector<vector<int32_t>>& stringVec,
+                              size_t num_elems,
+                              int max_len,
+                              size_t& data_volumn) {
   default_random_engine gen;
   uniform_int_distribution<int32_t> dist(INT32_MIN, INT32_MAX);
   uniform_int_distribution<> len_dist(0, max_len / 4);
@@ -178,7 +197,10 @@ size_t random_fill_int32array(vector<vector<int32_t>>& stringVec, size_t num_ele
 
 #define MAX_TEXT_LEN 255
 
-size_t random_fill(const ColumnDescriptor* cd, DataBlockPtr p, size_t num_elems, size_t& data_volumn) {
+size_t random_fill(const ColumnDescriptor* cd,
+                   DataBlockPtr p,
+                   size_t num_elems,
+                   size_t& data_volumn) {
   size_t hash = 0;
   switch (cd->columnType.get_type()) {
     case kSMALLINT:
@@ -190,11 +212,16 @@ size_t random_fill(const ColumnDescriptor* cd, DataBlockPtr p, size_t num_elems,
       data_volumn += num_elems * sizeof(int32_t);
       break;
     case kBIGINT:
-    case kNUMERIC:
-    case kDECIMAL:
-      hash = random_fill_int64(p.numbersPtr, num_elems);
+      hash = random_fill_int64(p.numbersPtr, num_elems, INT64_MIN, INT64_MAX);
       data_volumn += num_elems * sizeof(int64_t);
       break;
+    case kNUMERIC:
+    case kDECIMAL: {
+      int64_t max = std::pow((double)10, cd->columnType.get_precision());
+      int64_t min = -max;
+      hash = random_fill_int64(p.numbersPtr, num_elems, min, max);
+      data_volumn += num_elems * sizeof(int64_t);
+    } break;
     case kFLOAT:
       hash = random_fill_float(p.numbersPtr, num_elems);
       data_volumn += num_elems * sizeof(float);
@@ -205,16 +232,25 @@ size_t random_fill(const ColumnDescriptor* cd, DataBlockPtr p, size_t num_elems,
       break;
     case kVARCHAR:
     case kCHAR:
-      if (cd->columnType.get_compression() == kENCODING_NONE)
-        hash = random_fill_string(*p.stringsPtr, num_elems, cd->columnType.get_dimension(), data_volumn);
+      if (cd->columnType.get_compression() == kENCODING_NONE) {
+        {
+          hash = random_fill_string(
+              *p.stringsPtr, num_elems, cd->columnType.get_dimension(), data_volumn);
+        }
+      }
       break;
     case kTEXT:
-      if (cd->columnType.get_compression() == kENCODING_NONE)
-        hash = random_fill_string(*p.stringsPtr, num_elems, MAX_TEXT_LEN, data_volumn);
+      if (cd->columnType.get_compression() == kENCODING_NONE) {
+        {
+          hash = random_fill_string(*p.stringsPtr, num_elems, MAX_TEXT_LEN, data_volumn);
+        }
+      }
       break;
     case kTIME:
-    case kTIMESTAMP:
-      if (cd->columnType.get_dimension() == 0) {
+    case kTIMESTAMP: {
+      const int dimen = cd->columnType.get_dimension();
+      if (dimen == 0 || dimen == 3 || dimen == 6 ||
+          dimen == 9) {  // add timestamp(0,3,6,9) support
         if (sizeof(time_t) == 4) {
           hash = random_fill_int32(p.numbersPtr, num_elems);
           data_volumn += num_elems * sizeof(int32_t);
@@ -222,15 +258,25 @@ size_t random_fill(const ColumnDescriptor* cd, DataBlockPtr p, size_t num_elems,
           hash = random_fill_int64(p.numbersPtr, num_elems);
           data_volumn += num_elems * sizeof(int64_t);
         }
-      } else
-        assert(false);  // not supported yet
+      } else {
+        {
+          assert(false);  // not supported yet
+        }
+      }
       break;
+    }
     case kDATE:
       if (sizeof(time_t) == 4) {
         hash = random_fill_int32(p.numbersPtr, num_elems);
         data_volumn += num_elems * sizeof(int32_t);
       } else {
-        hash = random_fill_int64(p.numbersPtr, num_elems);
+        if (cd->columnType.is_date_in_days()) {
+          const int64_t min = INT32_MIN;
+          const int64_t max = INT32_MAX;
+          hash = random_fill_int64(p.numbersPtr, num_elems, min, max);
+        } else {
+          hash = random_fill_int64(p.numbersPtr, num_elems);
+        }
         data_volumn += num_elems * sizeof(int64_t);
       }
       break;
@@ -240,11 +286,14 @@ size_t random_fill(const ColumnDescriptor* cd, DataBlockPtr p, size_t num_elems,
   return hash;
 }
 
-vector<size_t> populate_table_random(const string& table_name, const size_t num_rows, const Catalog& cat) {
+vector<size_t> populate_table_random(const string& table_name,
+                                     const size_t num_rows,
+                                     const Catalog& cat) {
   const TableDescriptor* td = cat.getMetadataForTable(table_name);
-  list<const ColumnDescriptor*> cds = cat.getAllColumnMetadataForTable(td->tableId, false, false);
+  list<const ColumnDescriptor*> cds =
+      cat.getAllColumnMetadataForTable(td->tableId, false, false, false);
   InsertData insert_data;
-  insert_data.databaseId = cat.get_currentDB().dbId;
+  insert_data.databaseId = cat.getCurrentDB().dbId;
   insert_data.tableId = td->tableId;
   for (auto cd : cds) {
     insert_data.columnIds.push_back(cd->columnId);
@@ -265,7 +314,8 @@ vector<size_t> populate_table_random(const string& table_name, const size_t num_
         p.stringsPtr = col_vec;
       }
     } else {
-      int8_t* col_buf = static_cast<int8_t*>(malloc(num_rows * cd->columnType.get_size()));
+      int8_t* col_buf =
+          static_cast<int8_t*>(malloc(num_rows * cd->columnType.get_logical_size()));
       gc_numbers.push_back(unique_ptr<int8_t>(col_buf));  // add to gc list
       p.numbersPtr = col_buf;
     }
@@ -273,7 +323,8 @@ vector<size_t> populate_table_random(const string& table_name, const size_t num_
   }
 
   // fill InsertData  with random data
-  vector<size_t> col_hashs(cds.size());  // compute one hash per column for the generated data
+  vector<size_t> col_hashs(
+      cds.size());  // compute one hash per column for the generated data
   int i = 0;
   size_t data_volumn = 0;
   for (auto cd : cds) {
@@ -283,8 +334,9 @@ vector<size_t> populate_table_random(const string& table_name, const size_t num_
 
   // now load the data into table
   auto ms = measure<>::execution([&]() { td->fragmenter->insertData(insert_data); });
-  cout << "Loaded " << num_rows << " rows " << data_volumn << " bytes in " << ms << " ms. at "
-       << (double)data_volumn / (ms / 1000.0) / 1e6 << " MB/sec." << std::endl;
+  cout << "Loaded " << num_rows << " rows " << data_volumn << " bytes in " << ms
+       << " ms. at " << (double)data_volumn / (ms / 1000.0) / 1e6 << " MB/sec."
+       << std::endl;
 
   return col_hashs;
 }

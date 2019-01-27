@@ -13,26 +13,34 @@ import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.schema.Function;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.schema.SchemaVersion;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.util.ConversionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.mapd.common.SockTransportProperties;
 
 /**
  *
  * @author michael
  */
 public class MapDSchema implements Schema {
-
   final static Logger MAPDLOGGER = LoggerFactory.getLogger(MapDSchema.class);
 
   final private MetaConnect metaConnect;
-
-  public MapDSchema(String dataDir, MapDParser mp, int mapdPort, MapDUser mapdUser) {
-    System.setProperty("saffron.default.charset", ConversionUtil.NATIVE_UTF16_CHARSET_NAME);
-    System.setProperty("saffron.default.nationalcharset", ConversionUtil.NATIVE_UTF16_CHARSET_NAME);
-    System.setProperty("saffron.default.collation.name", ConversionUtil.NATIVE_UTF16_CHARSET_NAME + "$en_US");
-    metaConnect = new MetaConnect(mapdPort, dataDir, mapdUser, mp);
+  private SockTransportProperties sock_transport_properties = null;
+  public MapDSchema(String dataDir,
+          MapDParser mp,
+          int mapdPort,
+          MapDUser mapdUser,
+          SockTransportProperties skT) {
+    System.setProperty(
+            "saffron.default.charset", ConversionUtil.NATIVE_UTF16_CHARSET_NAME);
+    System.setProperty(
+            "saffron.default.nationalcharset", ConversionUtil.NATIVE_UTF16_CHARSET_NAME);
+    System.setProperty("saffron.default.collation.name",
+            ConversionUtil.NATIVE_UTF16_CHARSET_NAME + "$en_US");
+    metaConnect = new MetaConnect(mapdPort, dataDir, mapdUser, mp, skT);
   }
 
   @Override
@@ -80,14 +88,12 @@ public class MapDSchema implements Schema {
     throw new UnsupportedOperationException("Not supported yet.");
   }
 
-  @Override
-  public boolean contentsHaveChangedSince(long l, long l1) {
-    MAPDLOGGER.debug("l is " + l + " ll is " + l1);
-    return true;
+  void updateMetaData(String schema, String table) {
+    metaConnect.updateMetaData(schema, table);
   }
 
   @Override
-  public Schema snapshot(long l) {
+  public Schema snapshot(SchemaVersion sv) {
     throw new UnsupportedOperationException("Not supported yet.");
   }
 }

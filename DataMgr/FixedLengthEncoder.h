@@ -16,49 +16,54 @@
 
 #ifndef FIXED_LENGTH_ENCODER_H
 #define FIXED_LENGTH_ENCODER_H
-#include "Encoder.h"
-#include "AbstractBuffer.h"
-#include <stdexcept>
+#include <glog/logging.h>
 #include <iostream>
 #include <memory>
-#include <glog/logging.h>
+#include <stdexcept>
+#include "AbstractBuffer.h"
+#include "Encoder.h"
 
 template <typename T, typename V>
 class FixedLengthEncoder : public Encoder {
  public:
   FixedLengthEncoder(Data_Namespace::AbstractBuffer* buffer)
-      : Encoder(buffer),
-        dataMin(std::numeric_limits<T>::max()),
-        dataMax(std::numeric_limits<T>::min()),
-        has_nulls(false) {}
+      : Encoder(buffer)
+      , dataMin(std::numeric_limits<T>::max())
+      , dataMax(std::numeric_limits<T>::min())
+      , has_nulls(false) {}
 
-  ChunkMetadata appendData(int8_t*& srcData, const size_t numAppendElems) {
+  ChunkMetadata appendData(int8_t*& srcData,
+                           const size_t numAppendElems,
+                           const bool replicating = false) {
     T* unencodedData = reinterpret_cast<T*>(srcData);
     auto encodedData = std::unique_ptr<V[]>(new V[numAppendElems]);
     for (size_t i = 0; i < numAppendElems; ++i) {
-      // std::cout << "Unencoded: " << unencodedData[i] << std::endl;
-      // std::cout << "Min: " << dataMin << " Max: " <<  dataMax << std::endl;
-      encodedData.get()[i] = static_cast<V>(unencodedData[i]);
-      if (unencodedData[i] != encodedData.get()[i]) {
-        LOG(ERROR) << "Fixed encoding failed, Unencoded: " + std::to_string(unencodedData[i]) + " encoded: " +
-                          std::to_string(encodedData.get()[i]);
+      size_t ri = replicating ? 0 : i;
+      encodedData.get()[i] = static_cast<V>(unencodedData[ri]);
+      if (unencodedData[ri] != encodedData.get()[i]) {
+        decimal_overflow_validator_.validate(unencodedData[ri]);
+        LOG(ERROR) << "Fixed encoding failed, Unencoded: " +
+                          std::to_string(unencodedData[ri]) +
+                          " encoded: " + std::to_string(encodedData.get()[i]);
       } else {
-        T data = unencodedData[i];
+        T data = unencodedData[ri];
         if (data == std::numeric_limits<V>::min())
           has_nulls = true;
         else {
+          decimal_overflow_validator_.validate(data);
           dataMin = std::min(dataMin, data);
           dataMax = std::max(dataMax, data);
         }
       }
     }
-    numElems += numAppendElems;
+    num_elems_ += numAppendElems;
 
     // assume always CPU_BUFFER?
     buffer_->append((int8_t*)(encodedData.get()), numAppendElems * sizeof(V));
     ChunkMetadata chunkMetadata;
     getMetadata(chunkMetadata);
-    srcData += numAppendElems * sizeof(T);
+    if (!replicating)
+      srcData += numAppendElems * sizeof(T);
     return chunkMetadata;
   }
 
@@ -107,8 +112,9 @@ class FixedLengthEncoder : public Encoder {
   }
 
   void copyMetadata(const Encoder* copyFromEncoder) {
-    numElems = copyFromEncoder->numElems;
-    auto castedEncoder = reinterpret_cast<const FixedLengthEncoder<T, V>*>(copyFromEncoder);
+    num_elems_ = copyFromEncoder->getNumElems();
+    auto castedEncoder =
+        reinterpret_cast<const FixedLengthEncoder<T, V>*>(copyFromEncoder);
     dataMin = castedEncoder->dataMin;
     dataMax = castedEncoder->dataMax;
     has_nulls = castedEncoder->has_nulls;
@@ -116,7 +122,7 @@ class FixedLengthEncoder : public Encoder {
 
   void writeMetadata(FILE* f) {
     // assumes pointer is already in right place
-    fwrite((int8_t*)&numElems, sizeof(size_t), 1, f);
+    fwrite((int8_t*)&num_elems_, sizeof(size_t), 1, f);
     fwrite((int8_t*)&dataMin, sizeof(T), 1, f);
     fwrite((int8_t*)&dataMax, sizeof(T), 1, f);
     fwrite((int8_t*)&has_nulls, sizeof(bool), 1, f);
@@ -124,7 +130,7 @@ class FixedLengthEncoder : public Encoder {
 
   void readMetadata(FILE* f) {
     // assumes pointer is already in right place
-    fread((int8_t*)&numElems, sizeof(size_t), 1, f);
+    fread((int8_t*)&num_elems_, sizeof(size_t), 1, f);
     fread((int8_t*)&dataMin, 1, sizeof(T), f);
     fread((int8_t*)&dataMax, 1, sizeof(T), f);
     fread((int8_t*)&has_nulls, 1, sizeof(bool), f);

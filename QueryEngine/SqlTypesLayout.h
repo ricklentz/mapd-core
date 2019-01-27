@@ -49,42 +49,12 @@ inline const SQLTypeInfo& get_compact_type(const TargetInfo& target) {
     return target.sql_type;
   }
 
-  return (agg_type != kCOUNT && agg_type != kAPPROX_COUNT_DISTINCT) ? agg_arg : target.sql_type;
-}
-
-template <typename T>
-inline bool detect_overflow_and_underflow(const T a, const T b, const bool nullable, const T null_val) {
-#ifdef ENABLE_COMPACTION
-  if (nullable) {
-    if (a == null_val || b == null_val) {
-      return false;
-    }
-  }
-  const auto max_intx = std::numeric_limits<T>::max();
-  const auto min_intx = std::numeric_limits<T>::min();
-  if ((b > 0 && a > (max_intx - b)) || (b < 0 && a < (min_intx - b))) {
-    return true;
-  }
-#endif
-  return false;
-}
-
-template <typename T>
-inline bool detect_overflow_and_underflow(const T a,
-                                          const T b,
-                                          const bool nullable,
-                                          const T null_val,
-                                          const SQLTypeInfo& ti) {
-#ifdef ENABLE_COMPACTION
-  if (!ti.is_integer()) {
-    return false;
-  }
-#endif
-  return detect_overflow_and_underflow(a, b, nullable, null_val);
+  return (agg_type != kCOUNT && agg_type != kAPPROX_COUNT_DISTINCT) ? agg_arg
+                                                                    : target.sql_type;
 }
 
 inline int64_t inline_int_null_val(const SQLTypeInfo& ti) {
-  auto type = ti.is_decimal() ? decimal_to_int_type(ti) : ti.get_type();
+  auto type = ti.get_type();
   if (ti.is_string()) {
     CHECK_EQ(kENCODING_DICT, ti.get_compression());
     CHECK_EQ(4, ti.get_logical_size());
@@ -92,6 +62,8 @@ inline int64_t inline_int_null_val(const SQLTypeInfo& ti) {
   }
   switch (type) {
     case kBOOLEAN:
+      return inline_int_null_value<int8_t>();
+    case kTINYINT:
       return inline_int_null_value<int8_t>();
     case kSMALLINT:
       return inline_int_null_value<int16_t>();
@@ -105,6 +77,9 @@ inline int64_t inline_int_null_val(const SQLTypeInfo& ti) {
     case kINTERVAL_DAY_TIME:
     case kINTERVAL_YEAR_MONTH:
       return inline_int_null_value<int64_t>();
+    case kDECIMAL:
+    case kNUMERIC:
+      return inline_int_null_value<int64_t>();
     default:
       abort();
   }
@@ -113,6 +88,22 @@ inline int64_t inline_int_null_val(const SQLTypeInfo& ti) {
 inline int64_t inline_fixed_encoding_null_val(const SQLTypeInfo& ti) {
   if (ti.get_compression() == kENCODING_NONE) {
     return inline_int_null_val(ti);
+  }
+  if (ti.get_compression() == kENCODING_DATE_IN_DAYS) {
+    switch (ti.get_comp_param()) {
+      case 0:
+      case 32:
+        return inline_int_null_value<int32_t>();
+      case 16:
+        return inline_int_null_value<int16_t>();
+      default:
+#ifndef __CUDACC__
+        CHECK(false) << "Unknown encoding width for date in days: "
+                     << ti.get_comp_param();
+#else
+        CHECK(false);
+#endif
+    }
   }
   if (ti.get_compression() == kENCODING_DICT) {
     CHECK(ti.is_string());
@@ -124,7 +115,11 @@ inline int64_t inline_fixed_encoding_null_val(const SQLTypeInfo& ti) {
       case 4:
         return inline_int_null_value<int32_t>();
       default:
+#ifndef __CUDACC__
+        CHECK(false) << "Unknown size for dictionary encoded type: " << ti.get_size();
+#else
         CHECK(false);
+#endif
     }
   }
   CHECK_EQ(kENCODING_FIXED, ti.get_compression());
@@ -159,6 +154,8 @@ inline size_t get_bit_width(const SQLTypeInfo& ti) {
   switch (int_type) {
     case kBOOLEAN:
       return 8;
+    case kTINYINT:
+      return 8;
     case kSMALLINT:
       return 16;
     case kINT:
@@ -180,10 +177,21 @@ inline size_t get_bit_width(const SQLTypeInfo& ti) {
     case kCHAR:
       return 32;
     case kARRAY:
-      throw std::runtime_error("Projecting on array columns not supported yet.");
+      if (ti.get_size() == -1)
+        throw std::runtime_error("Projecting on unsized array column not supported.");
+      return ti.get_size() * 8;
+    case kPOINT:
+    case kLINESTRING:
+    case kPOLYGON:
+    case kMULTIPOLYGON:
+      return 32;
     default:
       abort();
   }
+}
+
+inline bool is_unsigned_type(const SQLTypeInfo& ti) {
+  return ti.get_compression() == kENCODING_DICT && ti.get_size() < ti.get_logical_size();
 }
 
 #endif  // QUERYENGINE_SQLTYPESLAYOUT_H

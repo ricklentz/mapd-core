@@ -30,7 +30,15 @@
 
 using namespace std;
 
-const std::vector<std::string> ParserWrapper::ddl_cmd = {"ALTER", "COPY", "GRANT", "CREATE", "DROP"};
+const std::vector<std::string> ParserWrapper::ddl_cmd = {"ALTER",
+                                                         "COPY",
+                                                         "GRANT",
+                                                         "CREATE",
+                                                         "DROP",
+                                                         "OPTIMIZE",
+                                                         "REVOKE",
+                                                         "SHOW",
+                                                         "TRUNCATE"};
 
 const std::vector<std::string> ParserWrapper::update_dml_cmd = {
     "INSERT",
@@ -73,7 +81,8 @@ ParserWrapper::ParserWrapper(std::string query_string) {
       if (ddl == "COPY") {
         is_copy = true;
         // now check if it is COPY TO
-        boost::regex copy_to{R"(COPY\s*\(([^#])(.+)\)\s+TO\s)", boost::regex::extended | boost::regex::icase};
+        boost::regex copy_to{R"(COPY\s*\(([^#])(.+)\)\s+TO\s)",
+                             boost::regex::extended | boost::regex::icase};
         if (boost::regex_match(query_string, copy_to)) {
           is_copy_to = true;
         }
@@ -82,9 +91,10 @@ ParserWrapper::ParserWrapper(std::string query_string) {
     }
   }
 
-  for (std::string u_dml : update_dml_cmd) {
-    is_update_dml = boost::istarts_with(query_string, u_dml);
+  for (int i = 0; i < update_dml_cmd.size(); i++) {
+    is_update_dml = boost::istarts_with(query_string, ParserWrapper::update_dml_cmd[i]);
     if (is_update_dml) {
+      dml_type = (DMLType)(i);
       return;
     }
   }

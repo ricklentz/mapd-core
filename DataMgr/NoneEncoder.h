@@ -22,34 +22,46 @@
 
 template <typename T>
 T none_encoded_null_value() {
-  return std::is_integral<T>::value ? inline_int_null_value<T>() : inline_fp_null_value<T>();
+  return std::is_integral<T>::value ? inline_int_null_value<T>()
+                                    : inline_fp_null_value<T>();
 }
 
 template <typename T>
 class NoneEncoder : public Encoder {
  public:
   NoneEncoder(Data_Namespace::AbstractBuffer* buffer)
-      : Encoder(buffer),
-        dataMin(std::numeric_limits<T>::max()),
-        dataMax(std::numeric_limits<T>::min()),
-        has_nulls(false) {}
+      : Encoder(buffer)
+      , dataMin(std::numeric_limits<T>::max())
+      , dataMax(std::numeric_limits<T>::lowest())
+      , has_nulls(false) {}
 
-  ChunkMetadata appendData(int8_t*& srcData, const size_t numAppendElems) {
+  ChunkMetadata appendData(int8_t*& srcData,
+                           const size_t numAppendElems,
+                           const bool replicating = false) {
     T* unencodedData = reinterpret_cast<T*>(srcData);
+    std::unique_ptr<T> encodedData;
+    if (replicating)
+      encodedData.reset(new T[numAppendElems]);
     for (size_t i = 0; i < numAppendElems; ++i) {
-      T data = unencodedData[i];
+      size_t ri = replicating ? 0 : i;
+      T data = unencodedData[ri];
+      if (replicating)
+        encodedData.get()[i] = data;
       if (data == none_encoded_null_value<T>())
         has_nulls = true;
       else {
+        decimal_overflow_validator_.validate(data);
         dataMin = std::min(dataMin, data);
         dataMax = std::max(dataMax, data);
       }
     }
-    numElems += numAppendElems;
-    buffer_->append(srcData, numAppendElems * sizeof(T));
+    num_elems_ += numAppendElems;
+    buffer_->append(replicating ? (int8_t*)encodedData.get() : srcData,
+                    numAppendElems * sizeof(T));
     ChunkMetadata chunkMetadata;
     getMetadata(chunkMetadata);
-    srcData += numAppendElems * sizeof(T);
+    if (!replicating)
+      srcData += numAppendElems * sizeof(T);
     return chunkMetadata;
   }
 
@@ -99,7 +111,7 @@ class NoneEncoder : public Encoder {
 
   void writeMetadata(FILE* f) {
     // assumes pointer is already in right place
-    fwrite((int8_t*)&numElems, sizeof(size_t), 1, f);
+    fwrite((int8_t*)&num_elems_, sizeof(size_t), 1, f);
     fwrite((int8_t*)&dataMin, sizeof(T), 1, f);
     fwrite((int8_t*)&dataMax, sizeof(T), 1, f);
     fwrite((int8_t*)&has_nulls, sizeof(bool), 1, f);
@@ -107,14 +119,14 @@ class NoneEncoder : public Encoder {
 
   void readMetadata(FILE* f) {
     // assumes pointer is already in right place
-    fread((int8_t*)&numElems, sizeof(size_t), 1, f);
+    fread((int8_t*)&num_elems_, sizeof(size_t), 1, f);
     fread((int8_t*)&dataMin, sizeof(T), 1, f);
     fread((int8_t*)&dataMax, sizeof(T), 1, f);
     fread((int8_t*)&has_nulls, sizeof(bool), 1, f);
   }
 
   void copyMetadata(const Encoder* copyFromEncoder) {
-    numElems = copyFromEncoder->numElems;
+    num_elems_ = copyFromEncoder->getNumElems();
     auto castedEncoder = reinterpret_cast<const NoneEncoder<T>*>(copyFromEncoder);
     dataMin = castedEncoder->dataMin;
     dataMax = castedEncoder->dataMax;

@@ -17,8 +17,8 @@
 #ifndef CHUNKMETADATA_H
 #define CHUNKMETADATA_H
 
-#include "../Shared/sqltypes.h"
 #include <stddef.h>
+#include "../Shared/sqltypes.h"
 
 struct ChunkStats {
   Datum min;
@@ -37,6 +37,11 @@ struct ChunkMetadata {
     chunkStats.has_nulls = has_nulls;
     switch (sqlType.get_type()) {
       case kBOOLEAN: {
+        chunkStats.min.tinyintval = min;
+        chunkStats.max.tinyintval = max;
+        break;
+      }
+      case kTINYINT: {
         chunkStats.min.tinyintval = min;
         chunkStats.max.tinyintval = max;
         break;
@@ -61,8 +66,15 @@ struct ChunkMetadata {
       case kTIME:
       case kTIMESTAMP:
       case kDATE: {
-        chunkStats.min.timeval = min;
-        chunkStats.max.timeval = max;
+        if (sqlType.is_date_in_days()) {
+          chunkStats.min.timeval =
+              min == std::numeric_limits<int64_t>::max() ? min : min * SECSPERDAY;
+          chunkStats.max.timeval =
+              max == std::numeric_limits<int64_t>::min() ? max : max * SECSPERDAY;
+        } else {
+          chunkStats.min.timeval = min;
+          chunkStats.max.timeval = max;
+        }
         break;
       }
       case kFLOAT: {
